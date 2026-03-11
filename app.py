@@ -100,8 +100,8 @@ def extract_bubble_features(image_path, top_n=20, shrink_ratio=0.9):
 # --------------------------
 calibration_data = pd.DataFrame({
     "Glucose": [25,50,75,100,125],
-    "H": [0.721975,0.729640,0.732043,0.740653,0.786354],
-    "S": [0.086809,0.092191,0.092608,0.101584,0.112603]
+    "H": [0.722795, 0.731712, 0.730700, 0.743624, 0.786134],
+    "S": [0.086949, 0.093759, 0.097361, 0.107223, 0.121588]
 })
 H_blank_deg = 12
 S_blank_percent = 0.6
@@ -153,3 +153,4 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"Error: {e}")
+
