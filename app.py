@@ -576,7 +576,7 @@ with tab3:
     # -----------------------------
     if st.button("🗑 Clear History"):
         st.session_state.history = []
-        localS.removeItem("glucose_history"
+        localS.removeItem("glucose_history")
         st.rerun()
 
     # -----------------------------
