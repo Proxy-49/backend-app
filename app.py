@@ -576,7 +576,11 @@ with tab3:
     # -----------------------------
     if st.button("🗑 Clear History"):
         st.session_state.history = []
-        localS.deleteItem("glucose_history")
+    
+        # overwrite browser storage with empty list
+        localS.setItem("glucose_history", [])
+    
+        st.success("History cleared successfully.")
         st.rerun()
 
     # -----------------------------
