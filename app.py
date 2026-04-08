@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from sklearn.linear_model import LinearRegression
 from PIL import Image, ImageOps
 from streamlit_local_storage import LocalStorage
+
 localS = LocalStorage()
 # --------------------------
 # Streamlit UI config
@@ -271,7 +272,7 @@ model_HS = LinearRegression().fit(calibration_data[["H_corr","S_corr"]], y_gluco
 # DEVICE-SPECIFIC HISTORY
 # =====================================
 if "history" not in st.session_state:
-    saved_history = localS.getItem("glucose_history", key="glucose_history_get")
+    saved_history = localS.getItem("glucose_history")
     
     if saved_history is None or saved_history in [None, "null", "undefined", ""]:
         st.session_state.history = []
@@ -507,7 +508,7 @@ with tab2:
                         new_entry
                     )
 
-                    localS.setItem("glucose_history", st.session_state.history, key="glucose_history_set")
+                    localS.setItem("glucose_history", st.session_state.history)
 
                     # mark upload as processed
                     st.session_state.last_processed_file = (
@@ -800,5 +801,5 @@ with tab6:
             
 # Auto-save history on every rerun
 if "history" in st.session_state and st.session_state.history is not None:
-    localS.setItem("glucose_history", st.session_state.history, key="glucose_history_autosave")
+    localS.setItem("glucose_history", st.session_state.history)
 
