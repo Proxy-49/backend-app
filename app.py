@@ -272,11 +272,11 @@ model_HS = LinearRegression().fit(calibration_data[["H_corr","S_corr"]], y_gluco
 if "history" not in st.session_state:
     saved_history = localS.getItem("glucose_history")
 
-    if saved_history is None:
+    if saved_history is None or saved_history == "null":
         st.session_state.history = []
     else:
         st.session_state.history = saved_history
-
+        
 # Track last processed upload
 if "last_processed_file" not in st.session_state:
     st.session_state.last_processed_file = None
