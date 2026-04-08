@@ -298,10 +298,6 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "❓ Myth Buster"
 ])
 
-# Auto-save history on every rerun
-if "history" in st.session_state and st.session_state.history is not None:
-    localS.setItem("glucose_history", st.session_state.history)
-
 # =====================================
 # HOME
 # =====================================
@@ -564,9 +560,10 @@ with tab2:
 
             except Exception as e:
                 st.error(
-                    "No bubbles detected in image, "
-                    f"please upload another image. ({e})"
-                )
+                        "No bubbles detected in image, please upload another image. ({e})",
+                        key="no_bubbles_error"
+                    )
+            
             finally:
                 if os.path.exists(raw_path):
                     os.remove(raw_path)
@@ -803,3 +800,7 @@ with tab6:
     for myth, fact in myths.items():
         with st.expander(myth):
             st.write(f"**FACT:** {fact}")
+            
+# Auto-save history on every rerun
+if "history" in st.session_state and st.session_state.history is not None:
+    localS.setItem("glucose_history", st.session_state.history)
