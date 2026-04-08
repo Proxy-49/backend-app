@@ -1,5 +1,4 @@
 # app_glucose_only.py
-
 import streamlit as st
 import cv2
 import numpy as np
@@ -9,7 +8,9 @@ import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from sklearn.linear_model import LinearRegression
-
+from PIL import Image, ImageOps
+from streamlit_local_storage import LocalStorage
+localS = LocalStorage()
 # --------------------------
 # Streamlit UI config
 # --------------------------
@@ -26,6 +27,17 @@ st.markdown("""
 /* Force all text to black */
 html, body, [class*="css"] {
     color: black !important;
+}
+
+p, span, label, div, small {
+    color: black !important;
+}
+
+span[data-baseweb="tag"] {
+    background-color: #A5D6A7 !important;  /* active tab green */
+    color: black !important;
+    border-radius: 4px !important;
+    padding: 4px 8px !important;
 }
 
 /* Title background */
@@ -56,7 +68,30 @@ button[data-baseweb="tab"][data-selected="true"] {
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🧪 Saliva Glucose Monitoring Platform")
+st.title("Saliva Glucose Monitoring Platform")
+
+# =====================================
+# IMAGE STANDARDISATION 
+# =====================================
+def standardize_image(input_path, output_path):
+    img = Image.open(input_path)
+    img = ImageOps.exif_transpose(img)
+    img = img.convert("RGB")
+
+    width, height = img.size
+    max_size = 800
+
+    if max(width, height) > max_size:
+        if width >= height:
+            new_width = max_size
+            new_height = int(height * max_size / width)
+        else:
+            new_height = max_size
+            new_width = int(width * max_size / height)
+        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+    img.save(output_path, format="JPEG", quality=95)
+    return output_path
 
 # =====================================
 # RGB TO HSV
@@ -91,96 +126,114 @@ def rgb_to_hsv(rgb):
     return np.stack([h, s, v], axis=1)
 
 # =====================================
-# BUBBLE FEATURE EXTRACTION (UPDATED)
+# BUBBLE FEATURE EXTRACTION 
 # =====================================
-def extract_bubble_features(image_path, top_n=20, visualize=True):
-    """
-    Detect bubbles, filter by HSV, select top N, and show final selection.
+def extract_bubble_features(image_path, top_n=20):
 
-    Args:
-        image_path (str): Path to the image.
-        top_n (int): Number of top bubbles to average.
-        visualize (bool): Show final bubble selection.
-
-    Returns:
-        avg_hsv (np.array): Average HSV of selected bubbles.
-        img_rgb (np.array): Original RGB image.
-    """
     img = cv2.imread(image_path)
     if img is None:
-        raise ValueError(f"Cannot read image {image_path}")
+        raise ValueError("Cannot read image")
 
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
-    
-    # Enhance contrast and reduce noise
-    img_gray = cv2.equalizeHist(img_gray)
-    img_gray = cv2.GaussianBlur(img_gray, (3,3), 0)
 
-    # Detect circular bubbles
+    # Normalize intensity 
+    img_rgb = img_rgb.astype(np.float32) / 255.0
+
+    # Grayscale
+    gray = cv2.cvtColor((img_rgb*255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
+
+    # Contrast enhancement
+    gray = cv2.equalizeHist(gray)
+
+    # Blur
+    gray = cv2.GaussianBlur(gray, (5,5), 1.2)
+
+    # Hough circles
     circles = cv2.HoughCircles(
-        img_gray, cv2.HOUGH_GRADIENT,
-        dp=1.2, minDist=20,
-        param1=50, param2=35,
-        minRadius=5, maxRadius=50
+        gray,
+        cv2.HOUGH_GRADIENT,
+        dp=1.1,
+        minDist=15,
+        param1=80,
+        param2=22,
+        minRadius=8,
+        maxRadius=25
     )
 
     if circles is None:
-        raise ValueError("No bubbles detected.")
+        raise ValueError("No bubbles detected")
 
-    circles = np.uint16(np.around(circles))
+    circles = np.round(circles[0]).astype(int)
+
     candidates = []
 
-    for x, y, r in circles[0]:
-        # Extract ROI
+    for x, y, r in circles:
+
+        r_roi = int(r * 0.95)
+
         Y, X = np.ogrid[:img_rgb.shape[0], :img_rgb.shape[1]]
-        mask = (X - x)**2 + (Y - y)**2 <= r**2
+        mask = (X - x)**2 + (Y - y)**2 <= r_roi**2
+
         roi_rgb = img_rgb[mask]
-        roi_hsv = rgb_to_hsv(roi_rgb / 255.0)
+
+        if roi_rgb.size == 0:
+            continue
+
+        roi_hsv = rgb_to_hsv(roi_rgb)
+
         h_mean, s_mean, v_mean = roi_hsv.mean(axis=0)
 
-        # Relaxed HSV filter
-        if 250/360 <= h_mean <= 295/360 and s_mean >= 0.03 and v_mean >= 0.55:
-            score = (h_mean**8) * s_mean * v_mean * r
+        # HSV pink filter
+        if (
+            250/360 <= h_mean <= 295/360 and
+            s_mean >= 0.035 and
+            v_mean >= 0.60
+        ):
+            score = (h_mean**8) * s_mean * v_mean * r_roi
+
             candidates.append({
-                "x": int(x),
-                "y": int(y),
-                "r": int(r),
-                "score": score,
-                "hsv": roi_hsv.mean(axis=0)
+                "x": x,
+                "y": y,
+                "r": r_roi,
+                "roi_hsv": roi_hsv,
+                "score": score
             })
 
     if len(candidates) == 0:
-        raise ValueError("No bubbles passed HSV filter.")
+        raise ValueError("No valid bubbles detected")
 
-    # Select top N non-overlapping
+    # =====================================
+    # OVERLAP FILTERING
+    # =====================================
     candidates = sorted(candidates, key=lambda b: b["score"], reverse=True)
+
     selected = []
+
     for b in candidates:
         overlap = False
+
         for sb in selected:
-            dist = np.sqrt((b["x"]-sb["x"])**2 + (b["y"]-sb["y"])**2)
+            dx = b["x"] - sb["x"]
+            dy = b["y"] - sb["y"]
+            dist = np.sqrt(dx**2 + dy**2)
+
             if dist < (b["r"] + sb["r"]):
                 overlap = True
                 break
+
         if not overlap:
             selected.append(b)
+
         if len(selected) >= top_n:
             break
 
-    # Visualization: final selected bubbles in blue
-    if visualize:
-        img_final = img_rgb.copy()
-        for b in selected:
-            cv2.circle(img_final, (b["x"], b["y"]), b["r"], (0, 0, 255), 2)  # blue
-        plt.figure(figsize=(6,6))
-        plt.imshow(img_final)
-        plt.title("Final Bubbles Selected")
-        plt.axis("off")
-        plt.show()
+    avg_hsv = np.mean(
+        [b["roi_hsv"].mean(axis=0) for b in selected],
+        axis=0
+    )
 
-    avg_hsv = np.mean([b["hsv"] for b in selected], axis=0)
-    return avg_hsv, img_rgb
+    return avg_hsv, (img_rgb*255).astype(np.uint8)
+
 
 # =====================================
 # CALIBRATION MODEL
@@ -207,11 +260,21 @@ model_H  = LinearRegression().fit(calibration_data[["H_corr"]], y_glucose)
 model_S  = LinearRegression().fit(calibration_data[["S_corr"]], y_glucose)
 model_HS = LinearRegression().fit(calibration_data[["H_corr","S_corr"]], y_glucose)
 
-
-# Initialize session state
+# =====================================
+# DEVICE-SPECIFIC HISTORY
+# =====================================
 if "history" not in st.session_state:
-    st.session_state.history = []
-    
+    saved_history = localS.getItem("glucose_history")
+
+    if saved_history is None:
+        st.session_state.history = []
+    else:
+        st.session_state.history = saved_history
+
+# Track last processed upload
+if "last_processed_file" not in st.session_state:
+    st.session_state.last_processed_file = None
+
 # =====================================
 # TABS
 # =====================================
@@ -262,70 +325,322 @@ This application estimates saliva glucose and hopes to reduce the need for invas
 # Saliva Glucose Estimation TAB
 # =====================================
 with tab2:
-    uploaded_file = st.file_uploader(
-        "Upload an image of your saliva bubbles",
-        type=["jpg","png","jpeg"]
+    st.header("🧪 Saliva Glucose Estimation")
+
+    meal_state = st.selectbox(
+        "Measurement condition",
+        ["Fasting", "Post-breakfast", "Post-lunch", "Post-dinner"]
     )
 
+    uploaded_file = st.file_uploader(
+        "Upload image",
+        type=["jpg", "jpeg", "png"]
+    )
+
+
+    # Process only NEW uploads
     if uploaded_file:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        temp_path = f"temp_{timestamp}.jpg"
+        file_id = hash(uploaded_file.getvalue())
 
-        with open(temp_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
+        if file_id != st.session_state.last_processed_file:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            raw_path = f"temp_{timestamp}.jpg"
+            std_path = f"std_{timestamp}.jpg"
 
-        try:
-            avg_hsv, img_rgb = extract_bubble_features(temp_path)
-            H_avg, S_avg, V_avg = avg_hsv
+            with open(raw_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
 
-            df_H  = pd.DataFrame({"H_corr":[H_avg]})
-            df_S  = pd.DataFrame({"S_corr":[S_avg]})
-            df_HS = pd.DataFrame({"H_corr":[H_avg], "S_corr":[S_avg]})
+            try:
+                standardize_image(raw_path, std_path)
+                avg_hsv, img_rgb = extract_bubble_features(std_path)
 
-            g_H  = max(model_H.predict(df_H)[0], 0)
-            g_S  = max(model_S.predict(df_S)[0], 0)
-            g_HS = max(model_HS.predict(df_HS)[0], 0)
+                H_avg, S_avg, V_avg = avg_hsv
 
-            glucose_weighted = 0.2*g_H + 0.3*g_S + 0.5*g_HS
+                df_H = pd.DataFrame({"H_corr": [H_avg]})
+                df_S = pd.DataFrame({"S_corr": [S_avg]})
+                df_HS = pd.DataFrame({
+                    "H_corr": [H_avg],
+                    "S_corr": [S_avg]
+                })
 
-            st.image(img_rgb, caption="Uploaded Image")
-            st.subheader("Estimated Glucose (µM)")
-            st.write(f"**{glucose_weighted:.1f} µM**")
+                g_H = max(model_H.predict(df_H)[0], 0)
+                g_S = max(model_S.predict(df_S)[0], 0)
+                g_HS = max(model_HS.predict(df_HS)[0], 0)
 
-            if 0 <= glucose_weighted <= 150:
-                st.success("✅ This is within expected healthy physiological saliva range.")
-            elif 150 < glucose_weighted <= 250:
-                st.warning("⚠️ Elevated saliva glucose detected. Consider confirmatory finger-prick or clinical assessment.")
-            else:
-                st.error("❌ Unusual Glucose Level detected, do upload another image.")
-           
-            sg_time = datetime.now(ZoneInfo("Asia/Singapore"))
+                # Matrix correction
+                SALIVA_MATRIX_FACTOR = 2.0
+                glucose_raw = 0.2 * g_H + 0.3 * g_S + 0.5 * g_HS
+                glucose_weighted = (
+                    glucose_raw * SALIVA_MATRIX_FACTOR
+                )
+
+                st.image(img_rgb, caption="Uploaded Image")
+                st.subheader("Estimated Glucose (µM)")
+                st.write(f"**{glucose_weighted:.1f} µM**")
+
+                # Invalid reading check
+                if glucose_weighted < 10 or glucose_weighted > 250:
+                    st.error(
+                        "❌ Glucose reading out of valid range. "
+                        "Please re-upload the image."
+                    )
+
+                    st.markdown("""
+                    <div style="
+                        width:100%;
+                        background-color:#d9d9d9;
+                        border-radius:8px;
+                        height:25px;
+                    ">
+                        <div style="
+                            width:100%;
+                            background-color:#8b0000;
+                            height:25px;
+                            border-radius:8px;
+                        "></div>
+                    </div>
+                    <p style="
+                        margin-top:6px;
+                        font-weight:600;
+                        color:black;
+                    ">
+                        ❌ Invalid reading — image needs re-upload
+                    </p>
+                    """, unsafe_allow_html=True)
+
+                else:
+                    # Risk visualization
+                    risk_width = (
+                        (glucose_weighted - 10) / (250 - 10)
+                    ) * 100
+
+                    risk_width = np.clip(
+                        risk_width, 0, 100
+                    )
+
+                    if glucose_weighted <= 110:
+                        bar_color = "#0b5d1e"
+                        risk_text = "🟢 Low Risk"
+
+                    elif glucose_weighted <= 220:
+                        bar_color = "#b8860b"
+                        risk_text = "🟡 Moderate Risk"
+
+                    else:
+                        bar_color = "#8b0000"
+                        risk_text = (
+                            "🔴 Very High Glucose Level"
+                        )
+
+                    st.markdown(f"""
+                    <div style="
+                        width:100%;
+                        background-color:#d9d9d9;
+                        border-radius:8px;
+                        height:25px;
+                    ">
+                        <div style="
+                            width:{risk_width}%;
+                            background-color:{bar_color};
+                            height:25px;
+                            border-radius:8px;
+                        "></div>
+                    </div>
+                    <p style="
+                        margin-top:6px;
+                        font-weight:600;
+                        color:black;
+                    ">
+                        {risk_text}
+                    </p>
+                    """, unsafe_allow_html=True)
+
+                    # Clinical message
+                    if 10 <= glucose_weighted <= 110:
+                        st.success(
+                            "✅ This is within expected healthy "
+                            "physiological saliva range."
+                        )
+
+                    elif 110 < glucose_weighted <= 220:
+                        st.warning(
+                            "⚠️ Elevated saliva glucose detected. "
+                            "Consider confirmatory finger-prick "
+                            "or clinical assessment."
+                        )
+
+                    else:
+                        st.error(
+                            "❌ Very high glucose detected. "
+                            "Please confirm with finger-prick "
+                            "or clinical assessment."
+                        )
+
+                    # Save valid reading
+                    
+                    sg_time = datetime.now(
+                        ZoneInfo("Asia/Singapore")
+                    )
+
+                    new_entry = {
+                        "Time": sg_time.strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        ),
+                        "Glucose": round(
+                            glucose_weighted, 1
+                        ),
+                        "MealState": meal_state
+                    }
+
+                    st.session_state.history.append(
+                        new_entry
+                    )
+
+                    pd.DataFrame(
+                        st.session_state.history
+                    ).to_csv(csv_path, index=False)
+
+                    # mark upload as processed
+                    st.session_state.last_processed_file = (
+                        file_id
+                    )
+
+
+                    # Trend analysis
+                    if len(
+                        st.session_state.history
+                    ) == 1:
+                        st.info(
+                            "📍 First recorded reading — "
+                            "trend will appear from next "
+                            "measurement."
+                        )
+
+                    else:
+                        prev = float(
+                            st.session_state.history[-2][
+                                "Glucose"
+                            ]
+                        )
+
+                        delta = (
+                            glucose_weighted - prev
+                        )
+
+                        if delta > 20:
+                            st.warning(
+                                f"📈 Rising trend "
+                                f"(+{delta:.1f} µM "
+                                f"from previous)"
+                            )
+
+                        elif delta < -20:
+                            st.info(
+                                f"📉 Falling trend "
+                                f"({delta:.1f} µM "
+                                f"from previous)"
+                            )
+
+                        else:
+                            st.success(
+                                "➖ Stable trend"
+                            )
+
+            except Exception as e:
+                st.error(
+                    "No bubbles detected in image, "
+                    f"please upload another image. ({e})"
+                )
+            finally:
+                if os.path.exists(raw_path):
+                    os.remove(raw_path)
             
-            st.session_state.history.append({
-            "Time": sg_time.strftime("%Y-%m-%d %H:%M:%S"),
-            "Glucose": round(glucose_weighted, 1)
-            })
-        
-        except Exception as e:
-            st.error(f"No bubbles detected in image, do upload another image: {e}")
-        
+                if os.path.exists(std_path):
+                    os.remove(std_path)
+
 # ==========================================
 #  HISTORY TAB
 # ==========================================
 with tab3:
     st.header("Historical Results Log")
 
+    # -----------------------------
+    # Clear history button
+    # -----------------------------
+    if st.button("🗑 Clear History"):
+        st.session_state.history = []
+
+        empty_df = pd.DataFrame(
+            columns=["Time", "Glucose", "MealState"]
+        )
+        empty_df.to_csv(csv_path, index=False)
+
+        st.rerun()
+
+    # -----------------------------
+    # Display history
+    # -----------------------------
     if len(st.session_state.history) > 0:
         df = pd.DataFrame(st.session_state.history)
 
+        df["Glucose"] = pd.to_numeric(df["Glucose"])
+        df["MovingAvg"] = df["Glucose"].rolling(window=3).mean()
+
         st.dataframe(df)
 
-        fig, ax = plt.subplots(figsize=(8, 4))
-        ax.plot(df["Time"], df["Glucose"], marker="o")
+        st.download_button(
+            "⬇ Download History CSV",
+            df.to_csv(index=False),
+            file_name="glucose_history.csv",
+            mime="text/csv"
+        )
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric("Average", f"{df['Glucose'].mean():.1f} µM")
+
+        with col2:
+            st.metric("Minimum", f"{df['Glucose'].min():.1f} µM")
+
+        with col3:
+            st.metric("Maximum", f"{df['Glucose'].max():.1f} µM")
+
+        fig, ax = plt.subplots(figsize=(10, 5))
+
+        ax.plot(
+            df["Time"],
+            df["Glucose"],
+            marker="o",
+            label="Glucose"
+        )
+
+        ax.plot(
+            df["Time"],
+            df["MovingAvg"],
+            linestyle="--",
+            label="Moving Avg (3)"
+        )
+
+        ax.axhline(
+            df["Glucose"].min(),
+            linestyle=":",
+            label="Min"
+        )
+
+        ax.axhline(
+            df["Glucose"].max(),
+            linestyle=":",
+            label="Max"
+        )
+
         ax.set_ylabel("Glucose (µM)")
         ax.set_xlabel("Date | Time")
+        ax.tick_params(axis="x", rotation=45)
+        ax.legend()
 
         st.pyplot(fig)
+
     else:
         st.info("No historical data available yet.")
 # =====================================
@@ -344,30 +659,72 @@ with tab4:
     st.subheader("Carbohydrate Counter")
 
     carbs_per_serving = {
-        "Rice (1 serving)": 45,
-        "Bread (2 slices)": 30,
-        "Apple (1 piece)": 15,
-        "Banana (1 piece)": 27,
-        "Noodles (1 serving)": 40,
-        "Pasta (1 serving)": 42,
-        "Crackers (5 pieces)": 15,
-        "Milk (1 cup)": 12
-    }
+            # common foods  
+            "Rice (1 serving)": 45,
+            "Bread (2 slices)": 30,
+            "Apple (1 piece)": 15,
+            "Banana (1 piece)": 27,
+            "Noodles (1 serving)": 40,
+            "Pasta (1 serving)": 42,
+            "Crackers (5 pieces)": 15,
+            "Milk (1 cup)": 12,
+            "Chocolate bar (50g)": 25,
+            "Glucose tablet (4g)": 4,
+            "Orange juice (250ml)": 25,
+            "Cereal (1 bowl)": 35,
+            "Oats (40g)": 25,
+            "Yogurt (150g)": 15,
+            "Cookies (3 pieces)": 20,
+            
+            # Singapore hawker foods
+            "Hainanese Chicken Rice (1 serving)": 60,
+            "Nasi Lemak (1 serving)": 45,
+            "Roti Prata (1 serving)": 35,
+            "Laksa (1 serving)": 55,
+            "Char Kway Teow (1 serving)": 65,
+            "Mee Goreng (1 serving)": 70,
+            "Bak Kut Teh (1 serving)": 40,
+            "Hokkien Mee (1 serving)": 69,
+            "Bee Hoon Goreng (1 serving)": 45,
+            "Rojak (1 serving)": 50,
+            "Nasi Briyani (1 serving)": 80,
+            "Mee Rebus (1 serving)": 60,
+            
+            # Singapore drinks
+            "Teh Tarik (1 cup)": 18,
+            "Teh O (1 cup)": 10,
+            "Teh C (1 cup)": 15,
+            "Kopi (1 cup)": 10,
+            "Kopi O (1 cup)": 5,
+            "Kopi C (1 cup)": 12,
+            "Milo (1 cup)": 25,
+            "Horlicks (1 cup)": 30,
+            "Bandung (1 cup)": 25,
+            "Ice Lemon Tea (1 cup)": 30
 
-    food = st.selectbox(
-        "Select food item",
-        list(carbs_per_serving.keys())
+            }
+
+    # Multi-select with up to 4 items
+    selected_foods = st.multiselect(
+        "Select up to 4 food items (leave blank for none)",
+        list(carbs_per_serving.keys()),
+        max_selections=4
     )
 
-    quantity = st.number_input(
-        "Number of servings",
-        min_value=1,
-        value=1
-    )
+    # Quantity input for each selected food
+    total_carbs = 0
+    if selected_foods:
+        for food in selected_foods:
+            qty = st.number_input(
+                f"Servings of {food}",
+                min_value=0.25, value=1.0, step=0.25,
+                key=f"qty_{food}"
+            )
+            carbs = carbs_per_serving[food] * qty
+            total_carbs += carbs
+            st.write(f"**{food}:** {carbs:.1f}g carbs")
 
-    total_carbs = carbs_per_serving[food] * quantity
-
-    st.metric("Estimated Carbohydrate Intake", f"{total_carbs} g")
+    st.metric("Total Carbohydrate Intake", f"{total_carbs:.1f} g")
 
 
 # =====================================
