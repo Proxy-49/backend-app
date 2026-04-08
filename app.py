@@ -571,8 +571,8 @@ with tab2:
                     os.remove(std_path)
 
         else:  
-            st.warning("⚠️ Same image detected - skipping processing")
-            st.info("👆 Upload a **different image** for new analysis")
+            st.warning("⚠️ Same image detected")
+            st.info("Do Upload a **different image** for new analysis")
 # ==========================================
 #  HISTORY TAB
 # ==========================================
