@@ -298,6 +298,10 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "❓ Myth Buster"
 ])
 
+# Auto-save history on every rerun
+if "history" in st.session_state and st.session_state.history is not None:
+    localS.setItem("glucose_history", st.session_state.history)
+
 # =====================================
 # HOME
 # =====================================
@@ -584,7 +588,7 @@ with tab3:
     # -----------------------------
     if st.button("🗑 Clear History"):
         st.session_state.history = []
-        localS.setItem("glucose_history", None)
+        localS.setItem("glucose_history", [])
         st.rerun()
 
     # -----------------------------
