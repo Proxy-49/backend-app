@@ -572,7 +572,7 @@ with tab2:
 
         else:  
             st.warning("⚠️ Same image detected")
-            st.info("Do Upload a **different image** for new analysis")
+            st.info("Upload a **different image** for new analysis")
 # ==========================================
 #  HISTORY TAB
 # ==========================================
