@@ -271,7 +271,7 @@ model_HS = LinearRegression().fit(calibration_data[["H_corr","S_corr"]], y_gluco
 # DEVICE-SPECIFIC HISTORY
 # =====================================
 if "history" not in st.session_state:
-    saved_history = localS.getItem("glucose_history")
+    saved_history = localS.getItem("glucose_history", key="glucose_history_get")
     
     if saved_history is None or saved_history in [None, "null", "undefined", ""]:
         st.session_state.history = []
@@ -507,10 +507,7 @@ with tab2:
                         new_entry
                     )
 
-                    localS.setItem(
-                            "glucose_history",
-                            st.session_state.history
-                        )
+                    localS.setItem("glucose_history", st.session_state.history, key="glucose_history_set")
 
                     # mark upload as processed
                     st.session_state.last_processed_file = (
@@ -803,4 +800,5 @@ with tab6:
             
 # Auto-save history on every rerun
 if "history" in st.session_state and st.session_state.history is not None:
-    localS.setItem("glucose_history", st.session_state.history)
+    localS.setItem("glucose_history", st.session_state.history, key="glucose_history_autosave")
+
