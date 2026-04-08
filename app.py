@@ -496,9 +496,10 @@ with tab2:
                         new_entry
                     )
 
-                    pd.DataFrame(
-                        st.session_state.history
-                    ).to_csv(csv_path, index=False)
+                    localS.setItem(
+                            "glucose_history",
+                            st.session_state.history
+                        )
 
                     # mark upload as processed
                     st.session_state.last_processed_file = (
@@ -569,12 +570,7 @@ with tab3:
     # -----------------------------
     if st.button("🗑 Clear History"):
         st.session_state.history = []
-
-        empty_df = pd.DataFrame(
-            columns=["Time", "Glucose", "MealState"]
-        )
-        empty_df.to_csv(csv_path, index=False)
-
+        localS.deleteItem("glucose_history")
         st.rerun()
 
     # -----------------------------
