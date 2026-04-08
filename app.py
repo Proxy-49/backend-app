@@ -800,10 +800,3 @@ with tab6:
         with st.expander(myth):
             st.write(f"**FACT:** {fact}")
             
-# Auto-save history on every rerun
-if "history" in st.session_state and st.session_state.history is not None:
-    localS.setItem(
-        "glucose_history",
-        json.dumps(st.session_state.history)
-    )
-
