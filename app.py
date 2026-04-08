@@ -54,6 +54,12 @@ div[role="tablist"] {
     padding: 5px;
 }
 
+caption, .stCaption, [data-testid="stCaptionContainer"] {
+    color: black !important;
+    font-size: 18px !important;
+    font-weight: 600 !important;
+}
+
 /* Tab text color */
 button[data-baseweb="tab"] {
     color: black !important;  /* tab text black */
