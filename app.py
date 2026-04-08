@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from sklearn.linear_model import LinearRegression
@@ -271,12 +272,16 @@ model_HS = LinearRegression().fit(calibration_data[["H_corr","S_corr"]], y_gluco
 # =====================================
 if "history" not in st.session_state:
     saved_history = localS.getItem("glucose_history")
-
-    if saved_history is None or saved_history == "null":
+    
+    if saved_history is None or saved_history in [None, "null", "undefined", ""]:
         st.session_state.history = []
     else:
-        st.session_state.history = saved_history
-        
+        try:
+            # Parse the JSON string back to list
+            parsed_history = json.loads(saved_history)
+            st.session_state.history = parsed_history if isinstance(parsed_history, list) else []
+        except (json.JSONDecodeError, TypeError):
+            st.session_state.history = []
 # Track last processed upload
 if "last_processed_file" not in st.session_state:
     st.session_state.last_processed_file = None
