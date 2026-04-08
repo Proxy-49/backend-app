@@ -508,13 +508,15 @@ with tab2:
                         new_entry
                     )
 
-                    localS.setItem("glucose_history", st.session_state.history)
-
+                    localS.setItem(
+                        "glucose_history",
+                        json.dumps(st.session_state.history)
+                    )
+                    
                     # mark upload as processed
                     st.session_state.last_processed_file = (
                         file_id
                     )
-
 
                     # Trend analysis
                     if len(
@@ -558,9 +560,8 @@ with tab2:
 
             except Exception as e:
                 st.error(
-                        "No bubbles detected in image, please upload another image. ({e})",
-                        key="no_bubbles_error"
-                    )
+                    f"No bubbles detected in image, please upload another image. ({e})"
+                )
             
             finally:
                 if os.path.exists(raw_path):
@@ -583,7 +584,7 @@ with tab3:
     # -----------------------------
     if st.button("🗑 Clear History"):
         st.session_state.history = []
-        localS.setItem("glucose_history", [])
+        localS.setItem("glucose_history", json.dumps([]))
         st.rerun()
 
     # -----------------------------
@@ -801,5 +802,8 @@ with tab6:
             
 # Auto-save history on every rerun
 if "history" in st.session_state and st.session_state.history is not None:
-    localS.setItem("glucose_history", st.session_state.history)
+    localS.setItem(
+        "glucose_history",
+        json.dumps(st.session_state.history)
+    )
 
