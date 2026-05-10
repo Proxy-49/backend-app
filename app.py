@@ -341,7 +341,7 @@ with tab2:
 
     meal_state = st.selectbox(
         "Measurement condition",
-        ["Fasting", "Post-breakfast", "Post-lunch", "Post-dinner"]
+        ["Fasting", "Pre-breakfast", "Post-breakfast","Pre-lunch", "Post-lunch", "Pre-dinner", "Post-dinner"]
     )
 
     uploaded_file = st.file_uploader(
