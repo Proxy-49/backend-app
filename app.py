@@ -87,7 +87,7 @@ def standardize_image(input_path, output_path):
     img = img.convert("RGB")
 
     width, height = img.size
-    max_size = 2048
+    max_size = 800
 
     if max(width, height) > max_size:
         if width >= height:
