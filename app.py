@@ -218,24 +218,31 @@ def extract_bubble_features(image_path, top_n=20):
 # CALIBRATION MODEL
 # =====================================
 
+# =====================================
+# CALIBRATION MODEL
+# =====================================
 calibration_data = pd.DataFrame({
     "Glucose": [25, 50, 75, 100, 125],
     "H": [0.735825, 0.745060, 0.740868, 0.743964, 0.784736],
     "S": [0.085632, 0.090197, 0.090234, 0.100153, 0.130699]
 })
 
-# Raw glucose values
+# saliva reference correction
+H_blank_deg = 2
+S_blank_percent = 0.1
+
+H_blank = H_blank_deg / 360.0
+S_blank = S_blank_percent / 100.0
+
+calibration_data["H_corr"] = calibration_data["H"] - H_blank
+calibration_data["S_corr"] = calibration_data["S"] - S_blank
+
 y_glucose = calibration_data["Glucose"].values
 
-# Raw H and S features
-X_H  = calibration_data[["H"]]
-X_S  = calibration_data[["S"]]
-X_HS = calibration_data[["H", "S"]]
+model_H  = LinearRegression().fit(calibration_data[["H_corr"]], y_glucose)
+model_S  = LinearRegression().fit(calibration_data[["S_corr"]], y_glucose)
+model_HS = LinearRegression().fit(calibration_data[["H_corr","S_corr"]], y_glucose)
 
-# Linear regression models
-model_H  = LinearRegression().fit(X_H, y_glucose)
-model_S  = LinearRegression().fit(X_S, y_glucose)
-model_HS = LinearRegression().fit(X_HS, y_glucose)
 
 # =====================================
 # DEVICE-SPECIFIC HISTORY
@@ -337,11 +344,11 @@ with tab2:
 
                 H_avg, S_avg, V_avg = avg_hsv
 
-                df_H = pd.DataFrame({"H": [H_avg]})
-                df_S = pd.DataFrame({"S": [S_avg]})
+                df_H = pd.DataFrame({"H_corr": [H_avg]})
+                df_S = pd.DataFrame({"S_corr": [S_avg]})
                 df_HS = pd.DataFrame({
-                    "H": [H_avg],
-                    "S": [S_avg]
+                    "H_corr": [H_avg],
+                    "S_corr": [S_avg]
                 })
 
                 g_H = max(model_H.predict(df_H)[0], 0)
