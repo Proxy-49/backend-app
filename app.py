@@ -350,7 +350,7 @@ with tab2:
 
                 # Matrix correction
                 SALIVA_MATRIX_FACTOR = 2.0
-                glucose_raw = 0.1 * g_H + 0.1.5 * g_S + 0.75 * g_HS
+                glucose_raw = 0.1 * g_H + 0.15 * g_S + 0.75 * g_HS
                 glucose_weighted = (
                     glucose_raw * SALIVA_MATRIX_FACTOR
                 )
