@@ -11,8 +11,6 @@ from zoneinfo import ZoneInfo
 from sklearn.linear_model import LinearRegression
 from PIL import Image, ImageOps
 from streamlit_local_storage import LocalStorage
-from matplotlib.colors import rgb_to_hsv
-
 
 localS = LocalStorage()
 # --------------------------
@@ -103,6 +101,37 @@ def standardize_image(input_path, output_path):
     img.save(output_path, format="JPEG", quality=95)
     return output_path
 
+# =====================================
+# RGB TO HSV
+# =====================================
+def rgb_to_hsv(rgb):
+    rgb = np.array(rgb)
+    maxc = rgb.max(axis=1)
+    minc = rgb.min(axis=1)
+
+    v = maxc
+    s = (maxc - minc) / (maxc + 1e-6)
+    s[maxc == 0] = 0
+
+    rc = (maxc - rgb[:,0]) / (maxc - minc + 1e-6)
+    gc = (maxc - rgb[:,1]) / (maxc - minc + 1e-6)
+    bc = (maxc - rgb[:,2]) / (maxc - minc + 1e-6)
+
+    h = np.zeros_like(maxc)
+
+    mask = maxc == rgb[:,0]
+    h[mask] = (bc - gc)[mask]
+
+    mask = maxc == rgb[:,1]
+    h[mask] = 2.0 + (rc - bc)[mask]
+
+    mask = maxc == rgb[:,2]
+    h[mask] = 4.0 + (gc - rc)[mask]
+
+    h = (h / 6.0) % 1.0
+    h[minc == maxc] = 0.0
+
+    return np.stack([h, s, v], axis=1)
 
 # =====================================
 # BUBBLE FEATURE EXTRACTION 
@@ -217,10 +246,6 @@ def extract_bubble_features(image_path, top_n=20):
 # =====================================
 # CALIBRATION MODEL
 # =====================================
-
-# =====================================
-# CALIBRATION MODEL
-# =====================================
 calibration_data = pd.DataFrame({
     "Glucose": [25, 50, 75, 100, 125],
     "H": [0.735825, 0.745060, 0.740868, 0.743964, 0.784736],
@@ -242,7 +267,6 @@ y_glucose = calibration_data["Glucose"].values
 model_H  = LinearRegression().fit(calibration_data[["H_corr"]], y_glucose)
 model_S  = LinearRegression().fit(calibration_data[["S_corr"]], y_glucose)
 model_HS = LinearRegression().fit(calibration_data[["H_corr","S_corr"]], y_glucose)
-
 
 # =====================================
 # DEVICE-SPECIFIC HISTORY
@@ -357,7 +381,7 @@ with tab2:
 
                 # Matrix correction
                 SALIVA_MATRIX_FACTOR = 2.0
-                glucose_raw = 0.1 * g_H + 0.15 * g_S + 0.75 * g_HS
+                glucose_raw = 0.1 * g_H + 0.1.5 * g_S + 0.75 * g_HS
                 glucose_weighted = (
                     glucose_raw * SALIVA_MATRIX_FACTOR
                 )
